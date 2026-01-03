@@ -1,11 +1,6 @@
-import argparse
-import urllib.request
-import urllib.error
-import time
-import json
-import sys
+import os
 
-BASE_URL = "http://localhost:3003"
+BASE_URL = os.environ.get("FIRECRAWL_BASE_URL", "http://localhost:3003")
 HEADERS = {
     "Content-Type": "application/json",
     "Authorization": "Bearer test",

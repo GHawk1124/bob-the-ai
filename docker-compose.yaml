@@ -1,0 +1,17 @@
+include:
+  - firecrawl-simple/docker-compose.yaml
+
+services:
+  bob:
+    build: .
+    environment:
+      - FIRECRAWL_BASE_URL=http://api:3003
+      - SEARXNG_BASE_URL=http://searxng:8080
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    volumes:
+      - .:/app
+    networks:
+      - backend
+    depends_on:
+      - api
+      - searxng

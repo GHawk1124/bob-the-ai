@@ -2,6 +2,7 @@ from langchain_openai import ChatOpenAI
 from langchain.agents import create_agent
 from langchain.tools import tool
 from search_tool.wolfram import query_wolfram
+import os
 
 @tool
 def wolfram_search(query: str) -> str:
@@ -31,7 +32,7 @@ def wolfram_search(query: str) -> str:
 
 llm = ChatOpenAI(
     model="gpt-oss:120b",
-    api_key="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ImNmNzE5MmVmLTNmYzgtNDVkNi04OWJhLTUxYjhjM2NlNWVkMiIsImV4cCI6MTc2OTc5MDk2OCwianRpIjoiZmQzZWI3NDItMzJkMi00ODRiLWI1MDYtN2E2NTRlZDMwZWZkIn0.5cq-JkEssgfoMS7az8kYRaONTUsnIlpUJVW0nR34A8Y",
+    api_key=os.getenv("OPENAI_API_KEY"),
     base_url="http://spark-bcce.hlab:8080/api",
     use_responses_api=False,
 )

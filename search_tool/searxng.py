@@ -2,8 +2,9 @@ import urllib.request
 import urllib.parse
 import json
 import sys
+import os
 
-SEARXNG_URL = "http://localhost:9005"
+SEARXNG_URL = os.environ.get("SEARXNG_BASE_URL", "http://localhost:9005")
 
 def search_searxng(query: str, num_results: int = 5):
     """
