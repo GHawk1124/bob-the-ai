@@ -1,0 +1,3 @@
+[submodule "firecrawl-simple"]
+	path = firecrawl-simple
+	url = https://github.com/devflowinc/firecrawl-simple.git
