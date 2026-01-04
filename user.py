@@ -250,10 +250,12 @@ class BobTUI(App):
             self.log_widget.write_line(f"[{event_type.upper()[:5]}] {event_data[:50]}")
     
     async def update_context(self, text: str, event_type: str = "THINK"):
-        """Update context display with new text."""
+        """Update context display with FULL text (no truncation)."""
         import time
         ts = time.strftime("%H:%M:%S")
-        self.context_md += f"\n\n---\n**{ts} [{event_type}]** {text[:150]}..."
+        
+        # Show FULL content - no truncation
+        self.context_md += f"\n\n---\n### {ts} [{event_type}]\n\n{text}\n"
         
         # Estimate tokens (rough: 4 chars per token)
         tokens = len(self.context_md) // 4

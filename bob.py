@@ -39,10 +39,7 @@ from tools.filesystem import (
     create_directory, remove_directory, list_directory,
     create_file, view_file, remove_file, edit_file, append_to_file
 )
-
-# Wolfram tool from existing search_tool
-from search_tool.wolfram import query_wolfram
-from langchain.tools import tool as lc_tool
+from tools.wolfram import wolfram_query
 
 
 # ============================================================================
@@ -54,31 +51,7 @@ OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "not-needed")
 MODEL_NAME = os.environ.get("MODEL_NAME", "gpt-oss:120b")
 SYSTEM_PROMPT_PATH = "/app/SYSTEM_PROMPT.md"
 HTTP_PORT = 8000
-
-
-# ============================================================================
-# Wolfram Tool (from existing code)
-# ============================================================================
-
-@lc_tool
-def wolfram_search(query: str) -> str:
-    """
-    Query Wolfram Alpha for mathematical calculations, unit conversions, 
-    scientific data, and factual information.
-    
-    Use this for:
-    - Math calculations and equations
-    - Unit conversions
-    - Scientific constants and formulas
-    - Factual data (population, geography, etc.)
-    
-    Args:
-        query: Natural language query or math expression
-    
-    Returns:
-        Wolfram Alpha's response with calculations/data.
-    """
-    return query_wolfram(query) or "Wolfram Alpha query failed."
+CONTEXT_WINDOW = 128000  # gpt-oss:120b supports 128k context
 
 
 # ============================================================================
@@ -192,6 +165,7 @@ def create_bob_agent():
     """Create the LangChain agent with all tools and middleware."""
     
     # Initialize LLM
+    # Note: Context window (128k for gpt-oss:120b) is configured on the LLM server
     llm = ChatOpenAI(
         model=MODEL_NAME,
         api_key=OPENAI_API_KEY,
@@ -213,7 +187,7 @@ def create_bob_agent():
         say,
         web_search,
         crawl_url,
-        wolfram_search,
+        wolfram_query,
         store_memory,
         retrieve_memory,
         modify_system_prompt,
