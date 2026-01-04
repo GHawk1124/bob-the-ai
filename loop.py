@@ -68,9 +68,19 @@ Begin by reflecting on who you are and what you're meant to do."""
                 messages.append({"role": "user", "content": user_message})
                 should_run = True
             elif heartbeat_triggered:
+                # Calculate context usage
+                total_chars = 0
+                for m in messages:
+                    if isinstance(m, dict):
+                        total_chars += len(str(m.get("content", "")))
+                    elif hasattr(m, "content"):
+                        total_chars += len(str(m.content))
+                estimated_tokens = total_chars // 4
+                usage_pct = int((estimated_tokens / state.CONTEXT_WINDOW) * 100) if state.CONTEXT_WINDOW else 0
+                
                 messages.append({
                     "role": "user", 
-                    "content": f"[HEARTBEAT {now.isoformat()}] No new user input. You may continue any ongoing tasks, reflect, or wait for input."
+                    "content": f"[HEARTBEAT {now.strftime('%Y-%m-%d %H:%M:%S')}] Context Usage: {estimated_tokens}/{state.CONTEXT_WINDOW} tokens ({usage_pct}%). No new user input. You may continue any ongoing tasks, reflect, or wait for input."
                 })
                 should_run = True
             
@@ -95,10 +105,9 @@ Begin by reflecting on who you are and what you're meant to do."""
                     if hasattr(last_msg, 'content'):
                         content = last_msg.content
                         if content:
-                            display_content = content[:200] + "..." if len(content) > 200 else content
-                            print(f"[THINK] {display_content}", flush=True)
+                            print(f"[THINK] {content}", flush=True)
                             try:
-                                state.activity_queue.put_nowait({"type": "think", "content": display_content})
+                                state.activity_queue.put_nowait({"type": "think", "content": content})
                             except queue.Full:
                                 pass
                     

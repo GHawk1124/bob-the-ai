@@ -23,7 +23,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # We copy specific files to avoid invalidating cache unnecessarily, though for this simple app '.' is often fine.
 # But we should be selective to avoid copying unwanted local files like .git
 COPY pyproject.toml uv.lock ./
-COPY bob.py ./
+COPY bob.py config.py state.py agent.py loop.py server.py ./
 COPY SYSTEM_PROMPT.md ./
 COPY search_tool ./search_tool
 COPY tools ./tools

@@ -13,6 +13,7 @@ import io
 import threading
 from urllib.request import Request, urlopen
 from urllib.error import URLError
+import textwrap
 
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
@@ -88,6 +89,7 @@ class BobTUI(App):
     
     Log {
         height: 100%;
+        text-wrap: wrap;
     }
     
     Input {
@@ -133,11 +135,11 @@ class BobTUI(App):
         
         # Check health
         if not self.check_health():
-            self.log_widget.write_line("[ERROR] Cannot connect to Bob!")
-            self.log_widget.write_line(f"Make sure Bob is running at {self.base_url}")
+            self.write_log("[ERROR] Cannot connect to Bob!")
+            self.write_log(f"Make sure Bob is running at {self.base_url}")
             return
         
-        self.log_widget.write_line("[OK] Connected to Bob!")
+        self.write_log("[OK] Connected to Bob!")
         
         # Set initial context
         self.context_md = "# Bob AI Context\n\n*Connected and streaming...*\n"
@@ -150,6 +152,7 @@ class BobTUI(App):
         """Refresh the markdown viewer with current context."""
         try:
             await self.context_viewer.document.update(self.context_md)
+            self.context_viewer.scroll_end(animate=False)
         except Exception:
             pass  # Ignore update errors
     
@@ -174,24 +177,24 @@ class BobTUI(App):
         # Check for slash commands
         if message.startswith("/"):
             if message == "/pause":
-                self.log_widget.write_line("[CMD] Pausing Bob...")
+                self.write_log("[CMD] Pausing Bob...")
                 await self.send_control("pause")
                 return
             elif message == "/start":
-                self.log_widget.write_line("[CMD] Resuming Bob...")
+                self.write_log("[CMD] Resuming Bob...")
                 await self.send_control("resume")
                 return
             elif message.startswith("/command "):
                 cmd = message[9:].strip()
-                self.log_widget.write_line(f"[CMD] Shell: {cmd}")
+                self.write_log(f"[CMD] Shell: {cmd}")
                 await self.send_shell_command(cmd)
                 return
             else:
-                self.log_widget.write_line(f"[ERROR] Unknown command: {message}")
+                self.write_log(f"[ERROR] Unknown command: {message}")
                 return
         
         # Log it
-        self.log_widget.write_line(f"[YOU] {message}")
+        self.write_log(f"[YOU] {message}")
         
         # Send to Bob
         await self.send_message(message)
@@ -208,9 +211,9 @@ class BobTUI(App):
             loop = asyncio.get_event_loop()
             resp = await loop.run_in_executor(None, lambda: urlopen(req, timeout=5))
             data = json.loads(resp.read().decode())
-            self.log_widget.write_line(f"[CTRL] {data.get('status', 'ok')}")
+            self.write_log(f"[CTRL] {data.get('status', 'ok')}")
         except Exception as e:
-            self.log_widget.write_line(f"[ERROR] Control failed: {e}")
+            self.write_log(f"[ERROR] Control failed: {e}")
 
     async def send_shell_command(self, command: str):
         """Send shell command to Bob."""
@@ -226,12 +229,24 @@ class BobTUI(App):
             data = json.loads(resp.read().decode())
             if data.get("status") == "success":
                 output = data.get("output", "")
-                self.log_widget.write_line(f"[SHELL] Output:\n{output}")
+                self.write_log(f"[SHELL] Output:\n{output}")
             else:
-                self.log_widget.write_line(f"[SHELL] Error: {data.get('output')}")
+                self.write_log(f"[SHELL] Error: {data.get('output')}")
         except Exception as e:
-            self.log_widget.write_line(f"[ERROR] Shell command failed: {e}")
+            self.write_log(f"[ERROR] Shell command failed: {e}")
     
+    def write_log(self, message: str):
+        """Write a message to the log with wrapping."""
+        # Estimate width (conservative)
+        width = 40
+        if self.log_widget.size.width:
+             # Subtract padding/border
+             width = max(20, self.log_widget.size.width - 4)
+        
+        # indent subsequent lines
+        wrapped = textwrap.fill(message, width=width, subsequent_indent="  ")
+        self.log_widget.write(wrapped + "\n")
+
     async def send_message(self, content: str):
         """Send message to Bob."""
         try:
@@ -244,9 +259,9 @@ class BobTUI(App):
             # Run in thread to not block
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(None, lambda: urlopen(req, timeout=10))
-            self.log_widget.write_line("[OK] Message sent")
+            self.write_log("[OK] Message sent")
         except Exception as e:
-            self.log_widget.write_line(f"[ERROR] Send failed: {e}")
+            self.write_log(f"[ERROR] Send failed: {e}")
     
     async def stream_loop(self):
         """Stream SSE events from Bob."""
@@ -277,7 +292,7 @@ class BobTUI(App):
                 
             except Exception as e:
                 if not self.stop_event.is_set():
-                    self.log_widget.write_line(f"[STREAM] Error: {e}")
+                    self.write_log(f"[STREAM] Error: {e}")
                     await asyncio.sleep(2)
     
     async def handle_sse_event(self, event_str: str):
@@ -295,13 +310,13 @@ class BobTUI(App):
             return
         
         if event_type == "say":
-            self.log_widget.write_line(f"[BOB] {event_data[:60]}")
+            self.write_log(f"[BOB] {event_data}")
             await self.update_context(event_data, "SAY")
         elif event_type == "think":
-            # self.log_widget.write_line(f"[THINK] {event_data[:50]}")
+            # self.write_log(f"[THINK] {event_data[:50]}")
             await self.update_context(event_data, "THINK")
         elif event_type == "tool":
-            # self.log_widget.write_line(f"[TOOL] {event_data[:50]}")
+            # self.write_log(f"[TOOL] {event_data[:50]}")
             await self.update_context(event_data, "TOOL")
         elif event_type == "context":
             # Full context update
@@ -318,7 +333,7 @@ class BobTUI(App):
                 pass
         elif event_data:
             pass
-            # self.log_widget.write_line(f"[{event_type.upper()[:5]}] {event_data[:50]}")
+            # self.write_log(f"[{event_type.upper()[:5]}] {event_data[:50]}")
     
     async def update_context(self, text: str, event_type: str = "THINK"):
         """Update context display with FULL text (no truncation)."""
