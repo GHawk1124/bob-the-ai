@@ -317,7 +317,9 @@ class BobTUI(App):
             await self.update_context(event_data, "THINK")
         elif event_type == "tool":
             # self.write_log(f"[TOOL] {event_data[:50]}")
-            await self.update_context(event_data, "TOOL")
+            await self.update_context(event_data, "TOOL CALL")
+        elif event_type == "tool_output":
+            await self.update_context(event_data, "TOOL OUTPUT")
         elif event_type == "context":
             # Full context update
             self.context_md = event_data

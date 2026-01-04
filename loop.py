@@ -102,24 +102,37 @@ Begin by reflecting on who you are and what you're meant to do."""
                     last_msg = step["messages"][-1]
                     msg_type = type(last_msg).__name__
                     
-                    if hasattr(last_msg, 'content'):
-                        content = last_msg.content
-                        if content:
-                            print(f"[THINK] {content}", flush=True)
-                            try:
-                                state.activity_queue.put_nowait({"type": "think", "content": content})
-                            except queue.Full:
-                                pass
+                    if msg_type == "ToolMessage":
+                         if hasattr(last_msg, 'content'):
+                            content = last_msg.content
+                            if content:
+                                # Truncate large tool outputs for display to avoid spamming
+                                display_content = content[:1000] + "..." if len(content) > 1000 else content
+                                print(f"[TOOL OUTPUT] {display_content}", flush=True)
+                                try:
+                                    state.activity_queue.put_nowait({"type": "tool_output", "content": display_content})
+                                except queue.Full:
+                                    pass
                     
-                    if hasattr(last_msg, 'tool_calls') and last_msg.tool_calls:
-                        for tc in last_msg.tool_calls:
-                            tool_name = tc.get('name', 'unknown')
-                            tool_args = str(tc.get('args', {}))[:100]
-                            print(f"[TOOL CALL] {tool_name}: {tool_args}", flush=True)
-                            try:
-                                state.activity_queue.put_nowait({"type": "tool", "content": f"{tool_name}: {tool_args}"})
-                            except queue.Full:
+                    elif msg_type == "AIMessage":
+                        if hasattr(last_msg, 'content') and last_msg.content:
+                             # AIMessage content is "thinking"
+                             content = last_msg.content
+                             print(f"[THINK] {content}", flush=True)
+                             try:
+                                state.activity_queue.put_nowait({"type": "think", "content": content})
+                             except queue.Full:
                                 pass
+                             
+                        if hasattr(last_msg, 'tool_calls') and last_msg.tool_calls:
+                            for tc in last_msg.tool_calls:
+                                tool_name = tc.get('name', 'unknown')
+                                tool_args = str(tc.get('args', {}))[:100]
+                                print(f"[TOOL CALL] {tool_name}: {tool_args}", flush=True)
+                                try:
+                                    state.activity_queue.put_nowait({"type": "tool", "content": f"{tool_name}: {tool_args}"})
+                                except queue.Full:
+                                    pass
                     
                     print(f"[DEBUG] Message type: {msg_type}", flush=True)
                 
