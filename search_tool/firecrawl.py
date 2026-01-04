@@ -1,4 +1,10 @@
 import os
+import sys
+import json
+import time
+import argparse
+import urllib.request
+import urllib.error
 
 BASE_URL = os.environ.get("FIRECRAWL_BASE_URL", "http://localhost:3003")
 HEADERS = {

@@ -4,14 +4,34 @@ include:
 services:
   bob:
     build: .
+    command: python bob.py
     environment:
       - FIRECRAWL_BASE_URL=http://api:3003
       - SEARXNG_BASE_URL=http://searxng:8080
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-http://spark-bcce.hlab:8080/api}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-embeddinggemma:300m}
     volumes:
-      - .:/app
+      - bob_data:/app/data
+      - ./SYSTEM_PROMPT.md:/app/SYSTEM_PROMPT.md
+    ports:
+      - "8000:8000"
     networks:
       - backend
     depends_on:
       - api
       - searxng
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    tty: true
+    stdin_open: true
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+volumes:
+  bob_data:

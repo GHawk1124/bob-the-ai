@@ -26,9 +26,13 @@ COPY pyproject.toml uv.lock ./
 COPY bob.py ./
 COPY SYSTEM_PROMPT.md ./
 COPY search_tool ./search_tool
+COPY tools ./tools
 
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev
+
+# Create data directory for persistent storage
+RUN mkdir -p /app/data
 
 # Place the executables in the environment at the front of the path
 ENV PATH="/app/.venv/bin:$PATH"
