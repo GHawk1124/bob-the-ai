@@ -28,14 +28,20 @@ class ContextHeader(Static):
     """Header showing context usage."""
     
     def __init__(self, **kwargs):
-        super().__init__("Context: 0%", **kwargs)
+        super().__init__("Context: 0 / ? (0%)", **kwargs)
         self.token_count = 0
-        self.max_tokens = 8000  # Approximate
+        self.max_tokens = 128000  # Default to 128k
+        self.model_name = "Unknown"
     
+    def set_config(self, max_tokens: int, model_name: str):
+        self.max_tokens = max_tokens
+        self.model_name = model_name
+        self.update_context(self.token_count)
+
     def update_context(self, count: int):
         self.token_count = count
-        pct = min(100, int(100 * count / self.max_tokens))
-        self.update(f"Context: ~{count} tokens ({pct}%)")
+        pct = min(100, int(100 * count / self.max_tokens)) if self.max_tokens else 0
+        self.update(f"[{self.model_name}] Context: {count} / {self.max_tokens} tokens ({pct}%)")
 
 
 class BobTUI(App):
@@ -165,11 +171,66 @@ class BobTUI(App):
         # Clear input
         self.user_input.value = ""
         
+        # Check for slash commands
+        if message.startswith("/"):
+            if message == "/pause":
+                self.log_widget.write_line("[CMD] Pausing Bob...")
+                await self.send_control("pause")
+                return
+            elif message == "/start":
+                self.log_widget.write_line("[CMD] Resuming Bob...")
+                await self.send_control("resume")
+                return
+            elif message.startswith("/command "):
+                cmd = message[9:].strip()
+                self.log_widget.write_line(f"[CMD] Shell: {cmd}")
+                await self.send_shell_command(cmd)
+                return
+            else:
+                self.log_widget.write_line(f"[ERROR] Unknown command: {message}")
+                return
+        
         # Log it
         self.log_widget.write_line(f"[YOU] {message}")
         
         # Send to Bob
         await self.send_message(message)
+    
+    async def send_control(self, action: str):
+        """Send control action to Bob."""
+        try:
+            req = Request(
+                f"{self.base_url}/control",
+                data=json.dumps({"action": action}).encode(),
+                headers={"Content-Type": "application/json"},
+                method="POST"
+            )
+            loop = asyncio.get_event_loop()
+            resp = await loop.run_in_executor(None, lambda: urlopen(req, timeout=5))
+            data = json.loads(resp.read().decode())
+            self.log_widget.write_line(f"[CTRL] {data.get('status', 'ok')}")
+        except Exception as e:
+            self.log_widget.write_line(f"[ERROR] Control failed: {e}")
+
+    async def send_shell_command(self, command: str):
+        """Send shell command to Bob."""
+        try:
+            req = Request(
+                f"{self.base_url}/shell",
+                data=json.dumps({"command": command}).encode(),
+                headers={"Content-Type": "application/json"},
+                method="POST"
+            )
+            loop = asyncio.get_event_loop()
+            resp = await loop.run_in_executor(None, lambda: urlopen(req, timeout=30))
+            data = json.loads(resp.read().decode())
+            if data.get("status") == "success":
+                output = data.get("output", "")
+                self.log_widget.write_line(f"[SHELL] Output:\n{output}")
+            else:
+                self.log_widget.write_line(f"[SHELL] Error: {data.get('output')}")
+        except Exception as e:
+            self.log_widget.write_line(f"[ERROR] Shell command failed: {e}")
     
     async def send_message(self, content: str):
         """Send message to Bob."""
@@ -237,17 +298,27 @@ class BobTUI(App):
             self.log_widget.write_line(f"[BOB] {event_data[:60]}")
             await self.update_context(event_data, "SAY")
         elif event_type == "think":
-            self.log_widget.write_line(f"[THINK] {event_data[:50]}")
+            # self.log_widget.write_line(f"[THINK] {event_data[:50]}")
             await self.update_context(event_data, "THINK")
         elif event_type == "tool":
-            self.log_widget.write_line(f"[TOOL] {event_data[:50]}")
+            # self.log_widget.write_line(f"[TOOL] {event_data[:50]}")
             await self.update_context(event_data, "TOOL")
         elif event_type == "context":
             # Full context update
             self.context_md = event_data
             await self.context_viewer.document.update(event_data)
+        elif event_type == "config":
+            try:
+                config = json.loads(event_data)
+                self.context_header.set_config(
+                    config.get("max_tokens", 128000),
+                    config.get("model_name", "Unknown")
+                )
+            except:
+                pass
         elif event_data:
-            self.log_widget.write_line(f"[{event_type.upper()[:5]}] {event_data[:50]}")
+            pass
+            # self.log_widget.write_line(f"[{event_type.upper()[:5]}] {event_data[:50]}")
     
     async def update_context(self, text: str, event_type: str = "THINK"):
         """Update context display with FULL text (no truncation)."""

@@ -11,7 +11,11 @@ This module implements Bob's core loop:
 import asyncio
 import os
 import sys
+import ssl
 import threading
+import json
+import urllib.request
+import urllib.error
 from typing import Optional, Dict, Any, List
 from datetime import datetime
 from contextlib import asynccontextmanager
@@ -51,7 +55,49 @@ OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "not-needed")
 MODEL_NAME = os.environ.get("MODEL_NAME", "gpt-oss:120b")
 SYSTEM_PROMPT_PATH = "/app/SYSTEM_PROMPT.md"
 HTTP_PORT = 8000
-CONTEXT_WINDOW = 128000  # gpt-oss:120b supports 128k context
+HTTP_PORT = 8000
+CONTEXT_WINDOW = 128000  # Default, will be updated dynamically
+
+
+def fetch_model_context_window() -> int:
+    """Fetch the context window for the configured model from the API."""
+    print(f"[BOB] Fetching context window for {MODEL_NAME}...")
+    try:
+        # Construct URL - assume standard Ollama/OpenAI-like endpoint
+        # If OPENAI_BASE_URL ends with /api or /v1, strip it or append /models
+        base = OPENAI_BASE_URL.rstrip("/")
+        url = f"{base}/models"
+        
+        req = urllib.request.Request(url)
+        if OPENAI_API_KEY and OPENAI_API_KEY != "not-needed":
+            req.add_header("Authorization", f"Bearer {OPENAI_API_KEY}")
+        
+        # Disable SSL verification if needed (local network)
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        
+        with urllib.request.urlopen(req, context=ctx, timeout=5) as resp:
+            data = json.loads(resp.read().decode())
+            
+        # Parse data to find our model
+        # OpenWebUI /api/models returns list of models in 'data'
+        for model in data.get("data", []):
+            if model.get("id") == MODEL_NAME:
+                # OpenWebUI: info -> num_ctx or context_length
+                info = model.get("info", {})
+                params = info.get("params", {})
+                ctx = info.get("context_length") or params.get("num_ctx") or model.get("context_window")
+                
+                if ctx:
+                    print(f"[BOB] Found context window: {ctx}")
+                    return int(ctx)
+                    
+        print(f"[BOB] Model {MODEL_NAME} not found in API response, using default.")
+        return 128000
+    except Exception as e:
+        print(f"[BOB] Error fetching model context: {e}")
+        return 128000
 
 
 # ============================================================================
@@ -66,6 +112,10 @@ user_input_queue: asyncio.Queue = asyncio.Queue(maxsize=10)  # Users -> Bob (mes
 response_queue: asyncio.Queue = asyncio.Queue(maxsize=10)  # Users -> Bob (input responses)
 activity_queue: queue.Queue = queue.Queue(maxsize=200)  # Agent activity (thread-safe)
 
+
+# Control flags
+PAUSED = False
+
 # Pending messages for users to consume
 outgoing_messages: List[Dict[str, Any]] = []
 
@@ -73,6 +123,10 @@ outgoing_messages: List[Dict[str, Any]] = []
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize queues and start agent on startup."""
+    # Update context window dynamically
+    global CONTEXT_WINDOW
+    CONTEXT_WINDOW = fetch_model_context_window()
+
     set_message_queue(message_queue)
     set_response_queue(response_queue)
     
@@ -115,6 +169,15 @@ async def receive_message(request: Request):
 async def stream_messages(request: Request):
     """SSE endpoint for streaming Bob's output to users."""
     async def event_generator():
+        # Send configuration first
+        yield {
+            "event": "config",
+            "data": json.dumps({
+                "max_tokens": CONTEXT_WINDOW,
+                "model_name": MODEL_NAME
+            })
+        }
+
         while True:
             if await request.is_disconnected():
                 break
@@ -142,6 +205,45 @@ async def stream_messages(request: Request):
                 yield {"event": "heartbeat", "data": ""}
     
     return EventSourceResponse(event_generator())
+
+
+
+@app.post("/control")
+async def control_agent(request: Request):
+    """Control agent state (pause/resume)."""
+    global PAUSED
+    data = await request.json()
+    action = data.get("action")
+    
+    if action == "pause":
+        PAUSED = True
+        print("[BOB] Paused by user command", flush=True)
+        return {"status": "paused"}
+    elif action == "resume":
+        PAUSED = False
+        print("[BOB] Resumed by user command", flush=True)
+        return {"status": "resumed"}
+    
+    return {"status": "error", "message": "Invalid action"}
+
+
+@app.post("/shell")
+async def run_shell_command(request: Request):
+    """Execute a shell command directly."""
+    data = await request.json()
+    command = data.get("command")
+    
+    if not command:
+        return {"status": "error", "message": "No command provided"}
+        
+    print(f"[BOB] direct shell command: {command}", flush=True)
+    try:
+        # Run in executor to not block async loop
+        loop = asyncio.get_running_loop()
+        output = await loop.run_in_executor(None, lambda: execute_shell(command))
+        return {"status": "success", "output": output}
+    except Exception as e:
+        return {"status": "error", "output": str(e)}
 
 
 # ============================================================================
@@ -268,6 +370,11 @@ Begin by reflecting on who you are and what you're meant to do."""
     print("[BOB] Starting main loop...", flush=True)
     
     while True:
+        # Check pause state
+        if PAUSED:
+            loop.run_until_complete(asyncio.sleep(1))
+            continue
+
         try:
             # ================================================================
             # OBSERVE - Check for new inputs
